@@ -32,7 +32,7 @@ RUN fetch v8
 WORKDIR /usr/local/lib/v8/v8
 
 # Check out a specific version of v8
-# RUN git checkout 4ec5bb4f26
+RUN git checkout 4ec5bb4f26
 
 # List available build configurations
 RUN tools/dev/v8gen.py list
