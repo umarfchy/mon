@@ -1,9 +1,12 @@
 FROM ubuntu:22.04
 
-RUN sudo apt-get install -y ccache
-RUN sudo apt-get install -y cmake
-RUN sudo apt-get install -y pkg-config
-
+RUN apt-get update -y 
+RUN apt-get install -y ccache
+RUN apt-get install -y cmake
+RUN apt-get install -y pkg-config
+RUN apt-get install -y build-essential
+RUN apt-get install -y git 
+RUN apt-get install -y python3
 RUN ccache --version 
 # ccache version 4.6.3
 
@@ -16,7 +19,7 @@ RUN pkg-config --version
 # 0.29.2
 
 RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-RUN export PATH=`pwd`/depot_tools:$PATH
+ENV PATH=`pwd`/depot_tools:$PATH
 
 RUN echo "export PATH=`pwd`/depot_tools:\$PATH" >> ~/.bashrc
 
@@ -24,6 +27,9 @@ RUN cd depot_tools && git checkout 787e71ac && cd ..
 
 # add patch
 RUN mkdir -p lib/v8 && cd lib/v8
+
+
+
 RUN gclient
 RUN fetch v8
 
