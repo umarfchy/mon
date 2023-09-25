@@ -1,65 +1,58 @@
-# ==============================================================================
-# First stage build (compile V8)
-# ==============================================================================
+FROM ubuntu:22.04
 
-FROM debian as builder
+RUN sudo apt-get install -y ccache
+RUN sudo apt-get install -y cmake
+RUN sudo apt-get install -y pkg-config
 
-ARG V8_VERSION=latest
+RUN ccache --version 
+# ccache version 4.6.3
 
-RUN apt-get update && apt-get upgrade -yqq
+RUN ccache g++ --version
 
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -yqq bison 
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -yqq cdbs 
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -yqq curl 
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -yqq flex
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -yqq g++ 
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -yqq git
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -yqq vim
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -yqq pkg-config
+RUN cmake --version
+# cmake version 3.24.1
+
+RUN pkg-config --version
+# 0.29.2
 
 RUN git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+RUN export PATH=`pwd`/depot_tools:$PATH
 
-ENV PATH="/depot_tools:${PATH}"
+RUN echo "export PATH=`pwd`/depot_tools:\$PATH" >> ~/.bashrc
 
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -yqq python3
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -yqq procps
+RUN cd depot_tools && git checkout 787e71ac && cd ..
 
+# add patch
+RUN mkdir -p lib/v8 && cd lib/v8
+RUN gclient
 RUN fetch v8
 
-WORKDIR /v8
+RUN cd v8
+RUN git checkout 4ec5bb4f26
 
-RUN gn gen out/x64.release --args='v8_monolithic=true v8_use_external_startup_data=false is_component_build=false is_debug=false target_cpu="x64" use_goma=false goma_dir="None" v8_enable_backtrace=true v8_enable_disassembler=true v8_enable_object_print=true v8_enable_verify_heap=true'
+RUN tools/dev/v8gen.py list
 
-RUN ninja -C out/x64.release d8
+RUN tools/dev/v8gen.py x64.release.sample
 
-RUN strip out/x64.release/d8
+# echo 'v8_target_cpu = "arm64"' >> out.gn/x64.release.sample/args.gn 
+RUN echo 'cc_wrapper="ccache"' >> out.gn/x64.release.sample/args.gn 
+RUN sed -ie '/v8_enable_sandbox/d' out.gn/x64.release.sample/args.gn
 
-# ==============================================================================
-# Second stage build
-# ==============================================================================
+RUN export CCACHE_CPP2=yes
+RUN export CCACHE_SLOPPINESS=time_macros
 
-FROM debian:stable-slim
+# Optionally, add this to your ~/.zshrc if you are using zsh, or any
+# other equivalents
+RUN echo "export CCACHE_CPP2=yes" >> ~/.zshrc
+RUN echo "export CCACHE_SLOPPINESS=time_macros" >> ~/.zshrc
 
-ARG V8_VERSION=latest
-ENV V8_VERSION=$V8_VERSION
+RUN time ninja -C out.gn/x64.release.sample v8_monolith
 
-LABEL v8.version=$V8_VERSION \
-    maintainer="andre.burgaud@gmail.com"
+RUN cp out.gn/x64.release.sample/obj/libv8_monolith.a ../../../v8/
+RUN cp out.gn/x64.release.sample/icudtl.dat ../../../v8/
+RUN cp -r include ../../../v8/
 
-RUN apt-get update && apt-get upgrade -yqq && \
-    DEBIAN_FRONTEND=noninteractive apt-get install curl rlwrap vim -yqq && \
-    apt-get clean
-
-WORKDIR /v8
-
-COPY --from=builder /v8/out/x64.release/d8 ./
-
-    # COPY vimrc /root/.vimrc
-
-COPY entrypoint.sh /
-
-RUN chmod +x /entrypoint.sh && \
-    mkdir /examples && \
-    ln -s /v8/d8 /usr/local/bin/d8
-
-ENTRYPOINT ["/entrypoint.sh"]
+# clean up
+RUN cd ../../
+RUN rm -rf v8
+RUN rm -rf depot_tools
